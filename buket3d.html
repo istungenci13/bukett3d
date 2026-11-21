@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FBE6EE">
+<title>Pembe zambaklar 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;1,700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;background:#FBE6EE;overflow:hidden;color:#4A1D34;font-family:"Cormorant Garamond",Georgia,serif}
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+  h1{position:fixed;top:max(18px,env(safe-area-inset-top));left:0;right:0;margin:0;text-align:center;font-size:clamp(1.9rem,7vw,2.8rem);font-style:italic;font-weight:700;pointer-events:none}
+  p{position:fixed;bottom:max(20px,env(safe-area-inset-bottom));left:0;right:0;margin:0 20px;text-align:center;font-size:1.2rem;pointer-events:none}
+</style>
+</head>
+<body>
+<h1>Pembe zambaklar</h1>
+<p id="msg">Sürükleyerek çevir, iki parmakla yakınlaştır.</p>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  var msg = document.getElementById('msg');
+  if (!window.THREE) { msg.textContent = '3D yüklenemedi. İnternet bağlantını kontrol et.'; return; }
+  var T = THREE, D = Math.PI / 180, renderer;
+  try { renderer = new T.WebGLRenderer({ antialias: true, alpha: true }); }
+  catch (e) { msg.textContent = 'Bu cihaz 3D göstermeyi desteklemiyor.'; return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  var el = renderer.domElement; document.body.insertBefore(el, document.body.firstChild);
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var scene = new T.Scene(), cam = new T.PerspectiveCamera(38, 1, 0.1, 100);
+  scene.add(new T.HemisphereLight(0xffffff, 0xf3c6d6, 0.85));
+  var sun = new T.DirectionalLight(0xffffff, 0.8); sun.position.set(3, 6, 4); scene.add(sun);
+  var fill = new T.DirectionalLight(0xffb6d0, 0.35); fill.position.set(-4, 2, -3); scene.add(fill);
+
+  var seed = 7; function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+
+  // Taç yaprağı dokusu: orta damar, beyaz kenar, koyu benekler
+  function petalTex() {
+    var c = document.createElement('canvas'); c.width = 256; c.height = 512;
+    var x = c.getContext('2d'), g = x.createLinearGradient(0, 0, 0, 512);
+    g.addColorStop(0, '#fdeaf2'); g.addColorStop(.3, '#f7b4cd'); g.addColorStop(.65, '#ee83ab');
+    g.addColorStop(.9, '#d44a80'); g.addColorStop(1, '#a6c47e');
+    x.fillStyle = g; x.fillRect(0, 0, 256, 512);
+    var e = x.createLinearGradient(0, 0, 256, 0);
+    e.addColorStop(0, 'rgba(255,255,255,.6)'); e.addColorStop(.25, 'rgba(255,255,255,0)');
+    e.addColorStop(.75, 'rgba(255,255,255,0)'); e.addColorStop(1, 'rgba(255,255,255,.6)');
+    x.fillStyle = e; x.fillRect(0, 0, 256, 512);
+    var m = x.createLinearGradient(0, 512, 0, 40);
+    m.addColorStop(0, 'rgba(170,30,85,.75)'); m.addColorStop(1, 'rgba(170,30,85,0)');
+    x.strokeStyle = m; x.lineWidth = 6; x.shadowColor = 'rgba(170,30,85,.6)'; x.shadowBlur = 8;
+    x.beginPath(); x.moveTo(128, 512); x.lineTo(128, 40); x.stroke(); x.shadowBlur = 0;
+    for (var i = 0; i < 80; i++) {
+      var yy = 512 - (40 + rnd() * 260), xx = 128 + (rnd() + rnd() + rnd() - 1.5) * 80;
+      x.fillStyle = 'rgba(140,22,70,' + (0.5 + rnd() * 0.35) + ')';
+      x.beginPath(); x.arc(xx, yy, 1.5 + rnd() * 2.5, 0, 7); x.fill();
+    }
+    var t = new T.CanvasTexture(c); t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t;
+  }
+
+  // Eğri, sivri uçlu yaprak/taç yaprağı yüzeyi
+  function blade(o) {
+    var su = o.su || 26, sv = o.sv || 10, P = [], U = [], I = [], r = 0, y = 0, ds = o.L / su, i, j;
+    for (i = 0; i <= su; i++) {
+      var u = i / su, th = (o.a + (o.b - o.a) * Math.pow(u, o.k || 1.4)) * D;
+      if (i > 0) { r += Math.sin(th) * ds; y += Math.cos(th) * ds; }
+      var w = o.W * (Math.pow(Math.sin(Math.PI * Math.pow(u, o.wp || 0.75)), 0.8) + 0.08 * (1 - u));
+      var nx = -Math.cos(th), ny = Math.sin(th);
+      for (j = 0; j <= sv; j++) {
+        var v = j / sv * 2 - 1, off = (o.cup || 0) * w * v * v + (o.ruf || 0) * Math.sin(u * 16 + v * 2) * w * v * v;
+        P.push(r + nx * off, y + ny * off, v * w); U.push(j / sv, u);
+      }
+    }
+    for (i = 0; i < su; i++) for (j = 0; j < sv; j++) { var a = i * (sv + 1) + j, b = a + sv + 1; I.push(a, b, a + 1, b, b + 1, a + 1); }
+    var g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(P, 3));
+    g.setAttribute('uv', new T.Float32BufferAttribute(U, 2));
+    g.setIndex(I); g.computeVertexNormals(); return g;
+  }
+
+  var tex = petalTex();
+  var pm = new T.MeshStandardMaterial({ map: tex, side: T.DoubleSide, roughness: 0.6, emissive: 0xffc8dc, emissiveMap: tex, emissiveIntensity: 0.12 });
+  var outerG = blade({ L: .85, W: .2, a: 18, b: 108, cup: .7, ruf: .25 });
+  var innerG = blade({ L: .8, W: .23, a: 28, b: 98, cup: .8, ruf: .3 });
+  var filM = new T.MeshStandardMaterial({ color: 0xe9a9c0, roughness: .7 });
+  var antM = new T.MeshStandardMaterial({ color: 0xb5581f, roughness: .8 });
+  var pisM = new T.MeshStandardMaterial({ color: 0xa9c985, roughness: .6 });
+  var budM = new T.MeshStandardMaterial({ color: 0xe99ab8, roughness: .6 });
+  var stemM = new T.MeshStandardMaterial({ color: 0x4f7a4c, roughness: .8 });
+  var V = function (x, y, z) { return new T.Vector3(x, y, z); };
+
+  function lily() {
+    var f = new T.Group(), i;
+    for (i = 0; i < 3; i++) {
+      var p = new T.Mesh(innerG, pm); p.rotation.y = (60 + i * 120) * D; f.add(p);
+      var q = new T.Mesh(outerG, pm); q.rotation.y = i * 120 * D; f.add(q);
+    }
+    for (i = 0; i < 6; i++) {
+      var a = (i * 60 + 20) * D, cv = new T.CubicBezierCurve3(V(0, 0, 0), V(0, .25, 0), V(Math.cos(a) * .1, .45, Math.sin(a) * .1), V(Math.cos(a) * .3, .62, Math.sin(a) * .3));
+      f.add(new T.Mesh(new T.TubeGeometry(cv, 10, .011, 5), filM));
+      var an = new T.Mesh(new T.SphereGeometry(.045, 10, 8), antM); an.scale.set(.6, 1.8, .6);
+      an.position.copy(cv.getPoint(1)); an.quaternion.setFromUnitVectors(V(0, 1, 0), cv.getTangent(1)); f.add(an);
+    }
+    var pc = new T.CubicBezierCurve3(V(0, 0, 0), V(0, .3, 0), V(.03, .55, .02), V(.08, .8, .04));
+    f.add(new T.Mesh(new T.TubeGeometry(pc, 10, .014, 5), pisM));
+    var st = new T.Mesh(new T.SphereGeometry(.035, 8, 8), pisM); st.position.copy(pc.getPoint(1)); f.add(st);
+    return f;
+  }
+  function bud() {
+    var pts = [], i;
+    for (i = 0; i <= 12; i++) { var t = i / 12; pts.push(new T.Vector2(.14 * Math.pow(Math.sin(Math.PI * Math.pow(t, .8)), .9) + .005, t * .62)); }
+    return new T.Mesh(new T.LatheGeometry(pts, 14), budM);
+  }
+
+  var B = new T.Group(); scene.add(B);
+  var items = [], up = V(0, 1, 0), i, a;
+  function put(obj, pos, s, delay) {
+    obj.position.set(pos[0], pos[1], pos[2]);
+    obj.quaternion.setFromUnitVectors(up, V(pos[0], pos[1] - 1.2, pos[2]).normalize());
+    obj.rotateY(rnd() * 6);
+    var cv = new T.CatmullRomCurve3([V(0, .1, 0), V(pos[0] * .25, 1.6, pos[2] * .25), V(pos[0] * .7, pos[1] - .7, pos[2] * .7), V(pos[0], pos[1], pos[2])]);
+    B.add(new T.Mesh(new T.TubeGeometry(cv, 30, .04, 8), stemM));
+    obj.userData = { s: s, d: delay }; B.add(obj); items.push(obj);
+  }
+  put(lily(), [0, 3.85, 0], 1.05, .3);
+  for (i = 0; i < 5; i++) { a = i * 72 * D + .4; put(lily(), [Math.cos(a) * 1.05, 3.3 + rnd() * .15, Math.sin(a) * 1.05], .88, .6 + i * .2); }
+  for (i = 0; i < 3; i++) { a = (i * 120 + 40) * D; put(bud(), [Math.cos(a) * 1.4, 2.95 + i * .12, Math.sin(a) * 1.4], 1, 1.6 + i * .2); }
+
+  var leafM = new T.MeshStandardMaterial({ color: 0x5c8a58, side: T.DoubleSide, roughness: .7 });
+  var leafG = blade({ L: 1.25, W: .09, a: 12, b: 80, k: 1, cup: .5, su: 20, sv: 4, wp: .6 });
+  for (i = 0; i < 8; i++) {
+    var lf = new T.Mesh(leafG, leafM); a = i * 45 * D + .2;
+    lf.position.set(Math.cos(a) * .55, 2.05, Math.sin(a) * .55); lf.rotation.y = -a; B.add(lf);
+  }
+
+  // Ambalaj kâğıdı (dış krem, iç pembe), kurdele ve fiyonk
+  var cg = new T.CylinderGeometry(1.15, .15, 2.2, 56, 1, true); cg.translate(0, 1.1, 0);
+  var pp = cg.attributes.position;
+  for (i = 0; i < pp.count; i++) {
+    var x = pp.getX(i), yv = pp.getY(i), z = pp.getZ(i), an = Math.atan2(z, x), k = 1 + .04 * Math.sin(an * 6) * (yv / 2.2);
+    pp.setX(i, x * k); pp.setZ(i, z * k); if (yv > 2) pp.setY(i, yv + .09 * Math.sin(an * 3 + 1));
+  }
+  cg.computeVertexNormals();
+  B.add(new T.Mesh(cg, new T.MeshStandardMaterial({ color: 0xf7ead9, roughness: .9 })));
+  B.add(new T.Mesh(cg, new T.MeshStandardMaterial({ color: 0xf6bfd3, roughness: .9, side: T.BackSide })));
+  function rr(y) { return .15 + y / 2.2; }
+  var band = new T.Mesh(new T.CylinderGeometry(rr(1.2) + .03, rr(1) + .03, .2, 48, 1, true), new T.MeshStandardMaterial({ color: 0xd6457a, roughness: .5, side: T.DoubleSide }));
+  band.position.y = 1.1; B.add(band);
+  var bow = new T.Group(), bm = new T.MeshStandardMaterial({ color: 0xe25c8f, roughness: .5 });
+  [-1, 1].forEach(function (s) {
+    var lp = new T.Mesh(new T.TorusGeometry(.17, .05, 10, 28), bm); lp.scale.set(1, .7, .6); lp.position.x = s * .2; lp.rotation.z = s * .35; bow.add(lp);
+    var tl = new T.Mesh(new T.BoxGeometry(.1, .42, .02), bm); tl.position.set(s * .08, -.28, 0); tl.rotation.z = s * .22; bow.add(tl);
+  });
+  bow.add(new T.Mesh(new T.SphereGeometry(.08, 12, 10), bm));
+  bow.position.set(0, 1.1, rr(1.1) + .08); bow.rotation.x = .42; B.add(bow);
+
+  // Zemin gölgesi
+  var sc = document.createElement('canvas'); sc.width = sc.height = 128;
+  var sx = sc.getContext('2d'), sg = sx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  sg.addColorStop(0, 'rgba(120,30,70,.28)'); sg.addColorStop(1, 'rgba(120,30,70,0)');
+  sx.fillStyle = sg; sx.fillRect(0, 0, 128, 128);
+  var sh = new T.Mesh(new T.PlaneGeometry(4.2, 4.2), new T.MeshBasicMaterial({ map: new T.CanvasTexture(sc), transparent: true, depthWrite: false }));
+  sh.rotation.x = -Math.PI / 2; sh.position.y = -.02; scene.add(sh);
+
+  // Çevirme ve yakınlaştırma
+  var az = .5, pol = 1.3, zoom = 1, base = 10, tgt = V(0, 2.2, 0), ptr = {}, busy = 0;
+  function size() {
+    var w = innerWidth, h = innerHeight, th = Math.tan(19 * D);
+    renderer.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix();
+    base = Math.max(5.6 / 2 / th, 4.4 / 2 / (th * cam.aspect)) + 1;
+  }
+  addEventListener('resize', size); size();
+  el.addEventListener('pointerdown', function (e) { ptr[e.pointerId] = [e.clientX, e.clientY]; el.setPointerCapture(e.pointerId); });
+  el.addEventListener('pointermove', function (e) {
+    var p = ptr[e.pointerId]; if (!p) return;
+    var ids = Object.keys(ptr); busy = performance.now();
+    if (ids.length === 1) { az -= (e.clientX - p[0]) * .008; pol = Math.min(1.75, Math.max(.7, pol - (e.clientY - p[1]) * .006)); }
+    else {
+      var o = ptr[ids.filter(function (n) { return n != e.pointerId; })[0]];
+      zoom *= Math.hypot(p[0] - o[0], p[1] - o[1]) / Math.max(1, Math.hypot(e.clientX - o[0], e.clientY - o[1]));
+      zoom = Math.min(1.6, Math.max(.55, zoom));
+    }
+    p[0] = e.clientX; p[1] = e.clientY;
+  });
+  function end(e) { delete ptr[e.pointerId]; busy = performance.now(); }
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  el.addEventListener('wheel', function (e) { e.preventDefault(); zoom = Math.min(1.6, Math.max(.55, zoom * (1 + e.deltaY * .001))); }, { passive: false });
+
+  function ease(t) { return 1 + 2.6 * Math.pow(t - 1, 3) + 1.6 * Math.pow(t - 1, 2); }
+  var t0 = performance.now();
+  function loop(now) {
+    var t = (now - t0) / 1000;
+    items.forEach(function (o) {
+      var k = Math.min(1, Math.max(0, (t - o.userData.d) / 1.4));
+      o.scale.setScalar(Math.max(.001, o.userData.s * (reduce ? 1 : ease(k))));
+    });
+    if (!Object.keys(ptr).length && now - busy > 1500 && !reduce) az += .0025;
+    var d = base * zoom;
+    cam.position.set(tgt.x + d * Math.sin(pol) * Math.sin(az), tgt.y + d * Math.cos(pol), tgt.z + d * Math.sin(pol) * Math.cos(az));
+    cam.lookAt(tgt); renderer.render(scene, cam); requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
